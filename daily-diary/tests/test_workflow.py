@@ -1,6 +1,7 @@
 """Use synthetic material and local Git only; never read private diary data."""
 
 import importlib.util
+import base64
 import json
 import os
 from pathlib import Path
@@ -132,6 +133,28 @@ class PublisherTests(unittest.TestCase):
 
     def test_missing_markdown(self):
         self.assertNotEqual(self.publish("2026-10-02", check=False).returncode, 0)
+
+    def test_publish_referenced_images_only_and_detect_asset_changes(self):
+        assets = self.repo / "2026/10/assets/2026-10-01"
+        assets.mkdir(parents=True)
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")
+        photo = assets / "selected photo.png"
+        photo.write_bytes(png)
+        (assets / "unused.png").write_bytes(png)
+        source = self.repo / "2026/10/2026-10-01.md"
+        source.write_text(SAMPLE + "\n![合成测试图](<assets/2026-10-01/selected photo.png>)\n")
+        self.env["DIARY_PUBLISH"] = "1"
+        first = json.loads(self.publish().stdout)
+        files = run("git", "show", "--pretty=", "--name-only", "HEAD",
+                    cwd=self.repo).stdout.splitlines()
+        self.assertIn("2026/10/assets/2026-10-01/selected photo.png", files)
+        self.assertNotIn("2026/10/assets/2026-10-01/unused.png", files)
+        self.assertFalse(json.loads(self.publish().stdout)["changed"])
+        photo.write_bytes(png + b"\n")
+        third = json.loads(self.publish().stdout)
+        self.assertTrue(third["changed"])
+        self.assertNotEqual(third["commit"], first["commit"])
 
 
 if __name__ == "__main__":

@@ -22,6 +22,12 @@ REL="${TARGET_DATE:0:4}/${TARGET_DATE:5:2}/$TARGET_DATE"
 MARKDOWN="$REPO/$REL.md"
 PDF="$REPO/$REL.pdf"
 [[ -s "$MARKDOWN" ]] || { echo "Missing Markdown: $MARKDOWN" >&2; exit 3; }
+asset_listing="$(python3 "$GENERATOR" "$MARKDOWN" --list-images)"
+paths=("$REL.md" "$REL.pdf")
+while IFS= read -r image; do
+  [[ -n "$image" ]] || continue
+  paths+=("${image#"$REPO/"}")
+done <<< "$asset_listing"
 
 # Lock the same repository across concurrent scheduled/manual publishers.
 lock_key="$(printf '%s' "$REPO" | sha256sum | cut -d' ' -f1)"
@@ -47,8 +53,8 @@ if [[ "$PUBLISH" == 1 ]]; then
     exit 5
   }
   if [[ -s "$PDF" ]] \
-    && git -C "$REPO" ls-files --error-unmatch "$REL.md" "$REL.pdf" >/dev/null 2>&1 \
-    && git -C "$REPO" diff --quiet HEAD -- "$REL.md" "$REL.pdf"; then
+    && git -C "$REPO" ls-files --error-unmatch "${paths[@]}" >/dev/null 2>&1 \
+    && git -C "$REPO" diff --quiet HEAD -- "${paths[@]}"; then
     unchanged=true
   fi
 fi
@@ -64,10 +70,10 @@ commit=""
 changed=false
 if [[ "$PUBLISH" == 1 ]]; then
   if [[ "$unchanged" != true ]]; then
-    git -C "$REPO" add -- "$REL.md" "$REL.pdf"
-    git -C "$REPO" diff --cached --check -- "$REL.md" "$REL.pdf"
-    if ! git -C "$REPO" diff --cached --quiet -- "$REL.md" "$REL.pdf"; then
-      git -C "$REPO" commit --only -m "Diary: $TARGET_DATE" -- "$REL.md" "$REL.pdf" >/dev/null
+    git -C "$REPO" add -- "${paths[@]}"
+    git -C "$REPO" diff --cached --check -- "${paths[@]}"
+    if ! git -C "$REPO" diff --cached --quiet -- "${paths[@]}"; then
+      git -C "$REPO" commit --only -m "Diary: $TARGET_DATE" -- "${paths[@]}" >/dev/null
       changed=true
     fi
     git -C "$REPO" push "$REMOTE" "HEAD:refs/heads/$BRANCH" >/dev/null

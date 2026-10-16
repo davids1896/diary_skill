@@ -43,8 +43,8 @@ def require_tools() -> None:
         raise RuntimeError("Missing PDF dependencies: " + ", ".join(missing))
 
 
-def markdown_to_html(source: Path) -> str:
-    fragment = run(
+def markdown_fragment(source: Path) -> str:
+    return run(
         [
             str(PANDOC),
             "--from=gfm-raw_html",
@@ -53,9 +53,14 @@ def markdown_to_html(source: Path) -> str:
             str(source),
         ]
     ).stdout
-    # Refuse external resources and filesystem escapes before the renderer runs.
+
+
+def image_paths(source: Path, fragment: str | None = None) -> list[Path]:
+    """Use the renderer's parsed image references for exact asset archiving."""
     from html.parser import HTMLParser
     from urllib.parse import unquote, urlparse
+
+    paths = []
 
     class ResourceCheck(HTMLParser):
         def handle_starttag(self, tag, attrs):
@@ -75,8 +80,18 @@ def markdown_to_html(source: Path) -> str:
                     raise RuntimeError("Only local PNG/JPEG/WebP images are allowed")
                 if not resolved.is_file():
                     raise RuntimeError("Diary image does not exist")
+                if any(char in str(resolved) for char in "\r\n"):
+                    raise RuntimeError("Image path contains a line break")
+                if resolved not in paths:
+                    paths.append(resolved)
 
-    ResourceCheck().feed(fragment)
+    ResourceCheck().feed(fragment if fragment is not None else markdown_fragment(source))
+    return paths
+
+
+def markdown_to_html(source: Path) -> str:
+    fragment = markdown_fragment(source)
+    image_paths(source, fragment)
     title_match = re.search(r"<h1[^>]*>(.*?)</h1>", fragment, flags=re.DOTALL)
     title = re.sub(r"<[^>]+>", "", title_match.group(1)) if title_match else source.stem
     return f"""<!doctype html>
@@ -269,6 +284,7 @@ def main() -> int:
     parser.add_argument("source", type=Path, help="Diary Markdown file")
     parser.add_argument("-o", "--output", type=Path, help="Output PDF path")
     parser.add_argument("--verify-only", action="store_true", help="Verify an existing PDF")
+    parser.add_argument("--list-images", action="store_true", help="List validated local image paths")
     args = parser.parse_args()
 
     source = args.source.expanduser().resolve()
@@ -276,6 +292,10 @@ def main() -> int:
     if not source.is_file():
         raise FileNotFoundError(source)
 
+    if args.list_images:
+        for path in image_paths(source):
+            print(path)
+        return 0
     require_tools()
     if args.verify_only:
         verify_pdf(output, source)
