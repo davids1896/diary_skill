@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import os
 import re
 import shutil
@@ -13,9 +14,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-PANDOC = os.environ.get("DIARY_PANDOC", "pandoc")
-WEASYPRINT = os.environ.get("DIARY_WEASYPRINT", "weasyprint")
+def tool(name: str) -> str:
+    fallback = Path.home() / ".local/bin" / name
+    return shutil.which(name) or (str(fallback) if fallback.is_file() else name)
+
+
+PANDOC = os.environ.get("DIARY_PANDOC", tool("pandoc"))
+WEASYPRINT = os.environ.get("DIARY_WEASYPRINT", tool("weasyprint"))
 NOTO_SERIF = Path(os.environ.get(
     "DIARY_NOTO_SERIF", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"
 )).expanduser().resolve()
@@ -24,12 +31,13 @@ NOTO_SANS = Path(os.environ.get(
 )).expanduser().resolve()
 
 
-def run(command: list[str], *, text: bool = True) -> subprocess.CompletedProcess:
+def run(command: list[str], *, text: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         command,
         check=True,
         capture_output=True,
         text=text,
+        input=input_text,
     )
 
 
@@ -44,14 +52,20 @@ def require_tools() -> None:
 
 
 def markdown_fragment(source: Path) -> str:
+    from diary_layout import decorate
+
+    document = json.loads(run(
+        [str(PANDOC), "--from=gfm-raw_html", "--to=json", str(source)]
+    ).stdout)
+    document["blocks"] = decorate(document["blocks"])
     return run(
         [
             str(PANDOC),
-            "--from=gfm-raw_html",
+            "--from=json",
             "--to=html5",
             "--wrap=none",
-            str(source),
-        ]
+        ],
+        input_text=json.dumps(document),
     ).stdout
 
 
@@ -90,6 +104,7 @@ def image_paths(source: Path, fragment: str | None = None) -> list[Path]:
 
 
 def markdown_to_html(source: Path) -> str:
+    from diary_layout import STYLE
     fragment = markdown_fragment(source)
     image_paths(source, fragment)
     title_match = re.search(r"<h1[^>]*>(.*?)</h1>", fragment, flags=re.DOTALL)
@@ -208,6 +223,7 @@ img {{
   object-fit: contain;
 }}
 </style>
+<style>{STYLE}</style>
 </head>
 <body>
 {fragment}
