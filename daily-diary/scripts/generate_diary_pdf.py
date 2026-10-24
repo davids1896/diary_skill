@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -39,6 +41,62 @@ def run(command: list[str], *, text: bool = True, input_text: str | None = None)
         text=text,
         input=input_text,
     )
+
+
+def revision_content(source: Path) -> Counter:
+    """Compare authored blocks, not Markdown syntax or relocated asset paths."""
+    document = json.loads(run(
+        [str(PANDOC), "--from=gfm-raw_html", "--to=json", str(source)]
+    ).stdout)
+    blocks = Counter()
+
+    def inline_text(value):
+        if isinstance(value, list):
+            return "".join(inline_text(child) for child in value)
+        if not isinstance(value, dict):
+            return ""
+        kind, content = value.get("t"), value.get("c")
+        if kind == "Str":
+            return content
+        if kind in {"Space", "SoftBreak", "LineBreak"}:
+            return " "
+        if kind in {"Code", "Math"}:
+            return content[-1]
+        if kind in {"Image", "Link"}:
+            return inline_text(content[1])
+        return inline_text(content)
+
+    def visit(value):
+        if isinstance(value, list):
+            for child in value:
+                visit(child)
+        elif isinstance(value, dict):
+            kind, content = value.get("t"), value.get("c")
+            if kind in {"Para", "Plain", "Header"}:
+                inlines = content[-1] if kind == "Header" else content
+                text = " ".join(inline_text(inlines).split())
+                if text:
+                    blocks[("text", text)] += 1
+            if kind == "Image":
+                location = content[-1][0]
+                if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", location):
+                    raise RuntimeError("Content reference requires local images")
+                image = (source.parent / location).resolve()
+                blocks[("image", hashlib.sha256(image.read_bytes()).hexdigest())] += 1
+            visit(content)
+
+    visit(document["blocks"])
+    return blocks
+
+
+def verify_content_reference(source: Path, reference: Path) -> None:
+    missing = revision_content(reference) - revision_content(source)
+    if missing:
+        count = sum(missing.values())
+        raise RuntimeError(
+            f"Content regression: {count} reference block(s)/image(s) missing; "
+            "merge the latest diary revision before changing its layout"
+        )
 
 
 def require_tools() -> None:
@@ -301,12 +359,16 @@ def main() -> int:
     parser.add_argument("-o", "--output", type=Path, help="Output PDF path")
     parser.add_argument("--verify-only", action="store_true", help="Verify an existing PDF")
     parser.add_argument("--list-images", action="store_true", help="List validated local image paths")
+    parser.add_argument("--content-reference", type=Path, action="append", default=[],
+                        help="Reject content loss against an existing revision; repeat for multiple revisions")
     args = parser.parse_args()
 
     source = args.source.expanduser().resolve()
     output = (args.output or source.with_suffix(".pdf")).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(source)
+    for reference in args.content_reference:
+        verify_content_reference(source, reference.expanduser().resolve())
 
     if args.list_images:
         for path in image_paths(source):
