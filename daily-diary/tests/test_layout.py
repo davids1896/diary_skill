@@ -43,3 +43,17 @@ class LayoutTests(unittest.TestCase):
         self.assertIn('<div class="sleep-chart">', result)
         self.assertIn("In Bed", result)
         self.assertIn("left:95.83%;width:4.17%", result)
+
+    def test_compact_event_chart_keeps_order_and_optional_place(self):
+        result = self.render("| 时间 | 地点 | 短记 |\n|---|---|---|\n"
+                             "| 上午 | 学校 | 见老友 |\n| 次日03:08 | | 卧床记录开始 |")
+        self.assertIn('class="event-chart"', result)
+        self.assertEqual(result.count('class="event-stop"'), 2)
+        self.assertLess(result.index("见老友"), result.index("卧床记录开始"))
+        self.assertEqual(result.count('class="event-place"'), 1)
+        self.assertIn("次日03:08", result)
+
+    def test_long_chart_labels_fail_instead_of_clipping(self):
+        with self.assertRaises(ValueError):
+            self.render("| 时间 | 地点 | 短记 |\n|---|---|---|\n"
+                        "| 上午 | | 这是一段远远超过十二个字的事件描述 |")

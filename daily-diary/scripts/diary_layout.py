@@ -51,7 +51,24 @@ def decorate(blocks):
             # Pandoc Table: attr, caption, columns, head, bodies, foot.
             head = block["c"][3][1]
             labels = [text(cell[4]).strip() for cell in head[0][1]] if head else []
-            if labels[:2] == ["时间", "地点"]:
+            if labels == ["时间", "地点", "短记"]:
+                rows = [row for body in block["c"][4] for row in body[3]]
+                entries = []
+                for row in rows:
+                    cells = [text(cell[4]).strip() for cell in row[1]]
+                    if len(cells) != 3:
+                        continue
+                    when, where, event = cells
+                    if len(when) > 20 or len(where) > 12 or len(event) > 12:
+                        raise ValueError("Event chart labels exceed limits: time 20, place/event 12 characters")
+                    entries.append(
+                        '<div class="event-stop"><span class="event-time">'
+                        + html.escape(when) + '</span><div class="event-detail"><b>'
+                        + html.escape(event) + '</b>'
+                        + (f'<span class="event-place">{html.escape(where)}</span>' if where else "")
+                        + '</div></div>')
+                result.append(raw('<div class="event-chart">' + "".join(entries) + "</div>"))
+            elif labels[:2] == ["时间", "地点"]:
                 result.append(div("timeline", [block]))
             elif len(labels) == 3 and labels[1] == "状态" and labels[0].startswith("来源"):
                 result.append(div("source-table", [block]))
@@ -133,7 +150,19 @@ th:first-child, td:first-child { width: auto; white-space: normal; }
 .timeline th:first-child, .timeline td:first-child { width: 21mm; color: #a75340; }
 .timeline th:nth-child(2), .timeline td:nth-child(2) { width: 26mm; }
 .timeline th:nth-child(3), .timeline td:nth-child(3) { width: 24mm; }
+.timeline table:has(th:nth-child(4)) th:nth-child(3),
+.timeline table:has(th:nth-child(4)) td:nth-child(3) { width: 20mm; }
+.timeline table:not(:has(th:nth-child(4))) th:nth-child(3),
+.timeline table:not(:has(th:nth-child(4))) td:nth-child(3) { width: auto; }
 .timeline td:first-child { border-left: 2pt solid #73a99d; padding-left: 3mm; }
+.event-chart { margin: 4mm 0 6mm; font-family: "Diary Sans"; }
+.event-stop { display: flex; min-height: 9mm; break-inside: avoid; font-size: 9pt; }
+.event-time { width: 36mm; flex-shrink: 0; color: #895846; padding: 1mm 2mm 1mm 0; }
+.event-detail { border-left: 2pt solid #47958c; padding: 1mm 0 2mm 4mm;
+                width: 124mm; display: flex; align-items: baseline; }
+.event-detail b { font-weight: 500; width: 65mm; color: #226f67; }
+.event-place { color: #775c82; font-size: 8pt; width: 48mm; }
+.event-stop:nth-child(even) .event-detail { border-color: #cc9562; }
 .source-table th:first-child, .source-table td:first-child { width: 25mm; }
 .source-table th:nth-child(2), .source-table td:nth-child(2) { width: 26mm; }
 .health-metrics { border-top: 2pt solid #d4a542; margin: 4mm 0; }
