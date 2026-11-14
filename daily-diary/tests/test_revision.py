@@ -38,6 +38,14 @@ class RevisionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Content regression"):
             self.check("<!-- metadata -->\n\nImportant story.\n", "<!-- metadata -->\n")
 
+    def test_html_comment_examples_inside_code_are_preserved(self):
+        text = "```html\n<!-- example -->\n```\n\n`<!-- inline -->`\n\n<!-- metadata -->\n"
+        self.reference.write_text(text, encoding="utf8")
+        rendered = PDF.authored_markdown(self.reference)
+        self.assertIn("<!-- example -->", rendered)
+        self.assertIn("<!-- inline -->", rendered)
+        self.assertNotIn("<!-- metadata -->", rendered)
+
     def test_missing_story_fails_even_if_headings_survive(self):
         with self.assertRaisesRegex(RuntimeError, "Content regression"):
             self.check("# Diary\n\n## Life\n\nA memorable evening.\n",

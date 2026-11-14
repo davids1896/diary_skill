@@ -44,8 +44,27 @@ def run(command: list[str], *, text: bool = True, input_text: str | None = None)
 
 
 def authored_markdown(source: Path) -> str:
-    # HTML comments hold revision metadata, not rendered diary prose.
-    return re.sub(r'<!--[\s\S]*?-->', '', source.read_text(encoding='utf-8'))
+    # Ignore standalone metadata comments while preserving authored code examples.
+    text = source.read_text(encoding='utf-8')
+    output, prose = [], []
+    fence = None
+    def flush():
+        output.append(re.sub(r'(?m)^ {0,3}<!--[\s\S]*?-->[ \t]*(?:\n|$)', '', ''.join(prose)))
+        prose.clear()
+    for line in text.splitlines(keepends=True):
+        match = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line.rstrip('\r\n'))
+        if fence:
+            output.append(line)
+            if match and match[1][0] == fence[0] and len(match[1]) >= fence[1] and not match[2].strip():
+                fence = None
+        elif match:
+            flush()
+            fence = (match[1][0], len(match[1]))
+            output.append(line)
+        else:
+            prose.append(line)
+    flush()
+    return ''.join(output)
 
 
 def revision_content(source: Path) -> Counter:
