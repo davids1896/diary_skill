@@ -43,10 +43,16 @@ def run(command: list[str], *, text: bool = True, input_text: str | None = None)
     )
 
 
+def authored_markdown(source: Path) -> str:
+    # HTML comments hold revision metadata, not rendered diary prose.
+    return re.sub(r'<!--[\s\S]*?-->', '', source.read_text(encoding='utf-8'))
+
+
 def revision_content(source: Path) -> Counter:
     """Compare authored blocks, not Markdown syntax or relocated asset paths."""
     document = json.loads(run(
-        [str(PANDOC), "--from=gfm-raw_html", "--to=json", str(source)]
+        [str(PANDOC), "--from=gfm-raw_html", "--to=json"],
+        input_text=authored_markdown(source)
     ).stdout)
     blocks = Counter()
 
@@ -113,7 +119,8 @@ def markdown_fragment(source: Path) -> str:
     from diary_layout import decorate
 
     document = json.loads(run(
-        [str(PANDOC), "--from=gfm-raw_html", "--to=json", str(source)]
+        [str(PANDOC), "--from=gfm-raw_html", "--to=json"],
+        input_text=authored_markdown(source)
     ).stdout)
     document["blocks"] = decorate(document["blocks"])
     return run(
@@ -313,7 +320,7 @@ def verify_pdf(pdf: Path, source: Path) -> None:
         raise RuntimeError("PDF contains unembedded fonts: " + ", ".join(not_embedded))
 
     extracted = run(["pdftotext", str(pdf), "-"]).stdout
-    source_text = source.read_text(encoding="utf-8")
+    source_text = authored_markdown(source)
     for heading in ("工作记录", "日记"):
         if not re.search(rf"^##\s+{heading}\s*$", source_text, re.MULTILINE):
             raise RuntimeError(f"Markdown is missing section: {heading}")

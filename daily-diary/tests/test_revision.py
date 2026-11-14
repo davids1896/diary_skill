@@ -26,6 +26,18 @@ class RevisionTests(unittest.TestCase):
         self.candidate.write_text(candidate, encoding="utf8")
         PDF.verify_content_reference(self.candidate, self.reference)
 
+    def test_html_revision_comments_are_not_rendered_or_compared(self):
+        text = "# Diary\n\n<!-- hidden-revision-marker -->\n\nA real story.\n"
+        self.check(text, "# Diary\n\nA real story.\n")
+        self.reference.write_text(text, encoding="utf8")
+        fragment = PDF.markdown_fragment(self.reference)
+        self.assertNotIn("hidden-revision-marker", fragment)
+        self.assertIn("A real story.", fragment)
+
+    def test_ignoring_comments_does_not_allow_missing_story(self):
+        with self.assertRaisesRegex(RuntimeError, "Content regression"):
+            self.check("<!-- metadata -->\n\nImportant story.\n", "<!-- metadata -->\n")
+
     def test_missing_story_fails_even_if_headings_survive(self):
         with self.assertRaisesRegex(RuntimeError, "Content regression"):
             self.check("# Diary\n\n## Life\n\nA memorable evening.\n",
