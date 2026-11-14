@@ -316,6 +316,28 @@ img {{
 """
 
 
+def visible_markdown_text(source: Path) -> str:
+    """Count rendered text, excluding table syntax, link targets and attributes."""
+    document = json.loads(run(
+        [str(PANDOC), "--from=gfm-raw_html", "--to=json"],
+        input_text=authored_markdown(source)
+    ).stdout)
+    def visit(value):
+        if isinstance(value, list):
+            return " ".join(visit(child) for child in value)
+        if not isinstance(value, dict):
+            return ""
+        kind, content = value.get("t"), value.get("c")
+        if kind == "Str":
+            return content
+        if kind in {"Code", "CodeBlock", "Math"}:
+            return content[-1]
+        if kind in {"Image", "Link"}:
+            return visit(content[1])
+        return visit(content)
+    return visit(document["blocks"])
+
+
 def verify_pdf(pdf: Path, source: Path) -> None:
     info = run(["pdfinfo", str(pdf)]).stdout
     pages_match = re.search(r"^Pages:\s+(\d+)$", info, flags=re.MULTILINE)
@@ -345,9 +367,7 @@ def verify_pdf(pdf: Path, source: Path) -> None:
             raise RuntimeError(f"Markdown is missing section: {heading}")
         if heading not in extracted:
             raise RuntimeError(f"PDF is missing section: {heading}")
-    source_plain = re.sub(r"(?m)^#{1,6}\s+", "", source_text)
-    # PDF renderers show a Markdown link's label, not its potentially long URL.
-    source_plain = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", source_plain)
+    source_plain = visible_markdown_text(source)
     source_chars = re.sub(r"\s+", "", source_plain)
     extracted_chars = re.sub(r"\s+", "", extracted)
     if len(extracted_chars) < max(40, int(len(source_chars) * 0.85)):
