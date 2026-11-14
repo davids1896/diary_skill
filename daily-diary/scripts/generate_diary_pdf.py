@@ -373,7 +373,7 @@ def verify_pdf(pdf: Path, source: Path) -> None:
     if len(extracted_chars) < max(40, int(len(source_chars) * 0.85)):
         raise RuntimeError("Extracted PDF text is unexpectedly incomplete")
     for marker in re.findall(r"[\u4e00-\u9fff]{4,}", source_plain)[:3]:
-        if marker not in extracted:
+        if marker not in extracted_chars:
             raise RuntimeError(f"Extracted PDF text is missing marker: {marker}")
 
     with tempfile.TemporaryDirectory(prefix="diary-pdf-render-") as temp_dir:
