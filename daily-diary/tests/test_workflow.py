@@ -51,6 +51,16 @@ class PdfTests(unittest.TestCase):
         self.source = Path(self.temp.name) / "2026-10-01.md"
         self.source.write_text(SAMPLE, encoding="utf-8")
 
+    def test_wrapped_table_cell_marker_uses_pdf_drawing_order(self):
+        location = "第三号合成测试场景入口附近"
+        self.source.write_text("# 合成工具测试日记\n\n| 时间 | 地点 | 事情 |\n|---|---|---|\n| 上午 | " + location + " | " + "这是虚构测试说明用于检查多列表格换行后的文字提取顺序。" * 3 + " |\n\n## 工作记录\n\n完成合成测试文档。\n\n## 日记\n\n只有虚构的测试内容。\n")
+        result = run("python3", str(GENERATOR), str(self.source), check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.source.write_text(self.source.read_text().replace(location, "不存在于原始文件的测试地点"))
+        missing = run("python3", str(GENERATOR), str(self.source), "--verify-only", check=False)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("missing marker", missing.stderr)
+
     def test_network_image_rejected(self):
         self.source.write_text(SAMPLE + "\n![image](https://example.invalid/private.png)",
                                encoding="utf-8")
